@@ -68,10 +68,10 @@ class RunManager:
     # ========== 启动运行 ==========
 
     def start_run(
-        self,
-        task_id: str,
-        trigger_type: str = "manual",
-        param_values: dict | None = None,
+            self,
+            task_id: str,
+            trigger_type: str = "manual",
+            param_values: dict | None = None,
     ) -> str:
         """启动一次运行，返回 run_id"""
         conn = self._get_conn()
@@ -255,14 +255,28 @@ class RunManager:
         if not info:
             return
 
+        # watcher 线程：进程退出后关闭 stdout 管道，解除 readline 阻塞
+        def process_watcher():
+            info.process.wait()
+            try:
+                info.process.stdout.close()
+            except Exception:
+                pass
+
+        watcher = threading.Thread(target=process_watcher, daemon=True)
+        watcher.start()
+
         # ---- 日志读取循环 ----
         try:
             while True:
-                line_bytes = info.process.stdout.readline()
+                try:
+                    line_bytes = info.process.stdout.readline()
+                except (ValueError, OSError):
+                    # stdout 已被 watcher 关闭
+                    break
+
                 if not line_bytes:
-                    if info.process.poll() is not None:
-                        break
-                    continue
+                    break
 
                 if info.log_truncated:
                     continue
@@ -275,25 +289,31 @@ class RunManager:
                 if info.log_size + len(entry_bytes) > log_max_bytes:
                     info.log_truncated = True
                     trunc_msg = f"{timestamp}[LOG TRUNCATED] 日志已达到大小上限，停止写入\n"
-                    info.log_file.write(trunc_msg)
-                    info.log_file.flush()
+                    try:
+                        info.log_file.write(trunc_msg)
+                        info.log_file.flush()
+                    except Exception:
+                        pass
                     continue
 
-                info.log_file.write(entry)
-                info.log_file.flush()
+                try:
+                    info.log_file.write(entry)
+                    info.log_file.flush()
+                except Exception:
+                    pass
                 info.log_size += len(entry_bytes)
 
         except Exception:
             pass
 
-        # ---- 进程已退出 ----
+        # ---- 进程已退出，等待回收 ----
         exit_code = info.process.wait()
 
-        if info.log_file:
-            try:
+        try:
+            if info.log_file and not info.log_file.closed:
                 info.log_file.close()
-            except Exception:
-                pass
+        except Exception:
+            pass
 
         # ---- 更新数据库 ----
         ended_at = datetime.now(timezone.utc).isoformat()
@@ -322,7 +342,6 @@ class RunManager:
             except Exception:
                 pass
 
-            # 判定状态
             if intended_stop:
                 status = "stopped"
             elif exit_code == 0:
@@ -330,7 +349,6 @@ class RunManager:
             else:
                 status = "failed"
 
-            # 失败快照
             if status == "failed":
                 failure_lines = []
                 try:

@@ -7,21 +7,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
-from app.api import auth, audit, tasks, params, runs
+from app.api import auth, audit, tasks, params, runs, logs
 from app.config import HOST, PORT
 from app.core.run_manager import RunManager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用启动/关闭生命周期"""
     init_db()
-    # 恢复孤儿运行
     rm = RunManager.get_instance()
     rm.recover()
     print(f"[TaskMaster] 服务启动: http://{HOST}:{PORT}")
     yield
-    # 关闭时：所有 Job Object 句柄关闭，进程树自动清理
     print("[TaskMaster] 服务关闭")
 
 
@@ -48,6 +45,7 @@ app.include_router(audit.router)
 app.include_router(tasks.router)
 app.include_router(params.router)
 app.include_router(runs.router)
+app.include_router(logs.router)
 
 
 @app.get("/api/health")

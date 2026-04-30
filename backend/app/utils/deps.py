@@ -4,7 +4,7 @@ FastAPI 依赖项
 """
 import sqlite3
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.database import get_db
@@ -38,4 +38,30 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户不存在",
         )
+    return dict(user)
+
+
+def get_current_user_query(
+    token: str = Query(..., alias="token"),
+    db=Depends(get_db),
+):
+    """Query 参数版本的鉴权（用于 SSE / 文件下载等无法设 Header 的场景）"""
+    payload = verify_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token 无效或已过期",
+        )
+
+    user = db.execute(
+        "SELECT user_id, username FROM users WHERE user_id = ?",
+        (payload["sub"],),
+    ).fetchone()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户不存在",
+        )
+
     return dict(user)
