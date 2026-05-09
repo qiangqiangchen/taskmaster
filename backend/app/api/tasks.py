@@ -193,10 +193,9 @@ def create_task(
     )
 
     log_audit(db, "create_task", target_type="task", target_id=task_id,
-              detail={"name": req.name, "type": req.type})
+              detail={"name": req.name, "type": req.type}, username=_user["username"])
 
     return {"task_id": task_id, "message": "任务创建成功"}
-
 
 @router.get("/{task_id}")
 def get_task(
@@ -237,10 +236,10 @@ def get_task(
 
 @router.put("/{task_id}")
 def update_task(
-    task_id: str,
-    req: TaskUpdateRequest,
-    db=Depends(get_db),
-    _user=Depends(get_current_user),
+        task_id: str,
+        req: TaskUpdateRequest,
+        db=Depends(get_db),
+        _user=Depends(get_current_user),
 ):
     """更新任务"""
     existing = db.execute("SELECT task_id FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
@@ -264,8 +263,9 @@ def update_task(
         params.append(now)
         params.append(task_id)
         db.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE task_id = ?", params)
+        db.commit()
 
-    log_audit(db, "update_task", target_type="task", target_id=task_id)
+    log_audit(db, "update_task", target_type="task", target_id=task_id, username=_user["username"])
     return {"message": "任务更新成功"}
 
 
@@ -305,7 +305,7 @@ def delete_task(
     db.execute("DELETE FROM tasks WHERE task_id = ?", (task_id,))
 
     log_audit(db, "delete_task", target_type="task", target_id=task_id,
-              detail={"name": existing["name"]})
+              detail={"name": existing["name"]}, username=_user["username"])
     return {"message": "任务删除成功"}
 
 
@@ -331,7 +331,7 @@ def toggle_task(
 
     action = "enable_task" if new_enabled else "disable_task"
     log_audit(db, action, target_type="task", target_id=task_id,
-              detail={"name": existing["name"]})
+              detail={"name": existing["name"]}, username=_user["username"])
 
     return {"enabled": bool(new_enabled), "message": "已启用" if new_enabled else "已停用"}
 
@@ -398,7 +398,7 @@ def copy_task(
             shutil.copy2(src, SCRIPTS_DIR / f"{new_id}.exe")
 
     log_audit(db, "copy_task", target_type="task", target_id=new_id,
-              detail={"source_task_id": task_id, "source_name": existing["name"]})
+              detail={"source_task_id": task_id, "source_name": existing["name"]}, username=_user["username"])
 
     return {"task_id": new_id, "message": "任务复制成功"}
 
@@ -479,6 +479,78 @@ async def upload_script(
         raise HTTPException(status_code=400, detail="命令行任务不需要上传文件")
 
     log_audit(db, "upload_script", target_type="task", target_id=task_id,
-              detail={"filename": filename, "type": task_type})
+              detail={"filename": filename, "type": task_type}, username=_user["username"])
 
     return {"message": "文件上传成功", "filename": filename}
+
+
+
+@router.put("/{task_id}/toggle")
+def toggle_task(
+    task_id: str,
+    db=Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    """切换任务启用/停用"""
+    task = db.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    new_enabled = 0 if task["enabled"] else 1
+    db.execute(
+        "UPDATE tasks SET enabled = ? WHERE task_id = ?", (new_enabled, task_id)
+    )
+    db.commit()
+
+    log_audit(
+        db,
+        "enable_task" if new_enabled else "disable_task",
+        target_type="task",
+        target_id=task_id, username=_user["username"]
+    )
+    return {"enabled": bool(new_enabled)}
+
+
+@router.post("/{task_id}/duplicate")
+def duplicate_task(
+    task_id: str,
+    db=Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    """复制任务"""
+    task = db.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    new_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    new_name = f"{task['name']} (副本)"
+
+    db.execute(
+        "INSERT INTO tasks (task_id, name, type, command_template, entry_config, "
+        "work_dir, tags, env_vars, daemon_config, health_check_config, "
+        "enabled, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+        (
+            new_id, new_name, task["type"], task["command_template"],
+            task["entry_config"], task["work_dir"], task["tags"],
+            task["env_vars"], task["daemon_config"], task["health_check_config"],
+            now, now,
+        ),
+    )
+
+    param = db.execute(
+        "SELECT * FROM task_params WHERE task_id = ?", (task_id,)
+    ).fetchone()
+    if param:
+        db.execute(
+            "INSERT INTO task_params (param_id, task_id, mode, schema, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), new_id, param["mode"], param["schema"], now),
+        )
+
+    db.commit()
+
+    log_audit(db, "duplicate_task", target_type="task", target_id=new_id,
+              detail={"source_task_id": task_id}, username=_user["username"])
+    return {"task_id": new_id, "message": "任务已复制"}

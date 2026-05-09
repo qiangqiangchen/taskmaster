@@ -43,7 +43,14 @@
       <el-table :data="runList" v-loading="loading" empty-text="暂无运行记录">
         <el-table-column label="Run ID" width="280">
           <template #default="{ row }">
-            <span class="mono clickable" @click="$router.push(`/runs/${row.run_id}`)">
+            <span
+              v-if="row.status !== 'skipped'"
+              class="mono clickable"
+              @click="$router.push(`/runs/${row.run_id}`)"
+            >
+              {{ row.run_id.slice(0, 8) }}...
+            </span>
+            <span v-else class="mono muted">
               {{ row.run_id.slice(0, 8) }}...
             </span>
           </template>
@@ -53,12 +60,12 @@
             <span>{{ row.task_name || '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="110" align="center">
+        <el-table-column label="状态" width="120" align="center">
           <template #default="{ row }">
-            <div class="status-cell">
-              <span :class="['status-dot', `dot-${row.status}`]"></span>
-              <span :class="[`st-${row.status}`]">{{ statusMap[row.status] || row.status }}</span>
-            </div>
+            <span class="status-dot" :class="row.status"></span>
+            <el-tag :type="statusTagType(row.status)" size="small" effect="light">
+              {{ statusLabel(row.status) }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="触发" width="90" align="center">
@@ -81,7 +88,11 @@
         </el-table-column>
         <el-table-column label="操作" width="140" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" @click="$router.push(`/runs/${row.run_id}`)">
+            <el-button
+              v-if="row.status !== 'skipped'"
+              size="small"
+              @click="$router.push(`/runs/${row.run_id}`)"
+            >
               详情
             </el-button>
             <el-button
@@ -92,6 +103,7 @@
             >
               停止
             </el-button>
+            <span v-if="row.status === 'skipped'" class="skipped-label">已跳过</span>
           </template>
         </el-table-column>
       </el-table>
@@ -127,6 +139,13 @@ const statusMap = {
   running: '运行中', success: '成功', failed: '失败',
   stopped: '已停止', skipped: '已跳过', pending: '等待中',
 }
+const statusTagMap = {
+  running: '', success: 'success', failed: 'danger',
+  stopped: 'info', skipped: 'warning', pending: 'info',
+}
+function statusLabel(s) { return statusMap[s] || s }
+function statusTagType(s) { return statusTagMap[s] || 'info' }
+
 const triggerMap = { manual: '手动', cron: '定时', interval: '周期', startup: '开机' }
 
 async function loadRuns() {
@@ -155,7 +174,7 @@ onMounted(() => { loadRuns() })
 </script>
 
 <style scoped>
-.runs-page { max-width: 1400px; }
+.runs-page {}
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .page-header h2 { margin: 0; font-size: 20px; color: #1e293b; }
 .filter-card :deep(.el-card__body) { padding: 16px 20px; }
@@ -184,4 +203,6 @@ onMounted(() => { loadRuns() })
 .exit-err { color: #ef4444; font-weight: 600; }
 
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+.muted { color: #c0c4cc; }
+.skipped-label { font-size: 12px; color: #94a3b8; }
 </style>

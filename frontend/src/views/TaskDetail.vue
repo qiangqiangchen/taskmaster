@@ -255,52 +255,88 @@
                     </el-descriptions-item>
                 </el-descriptions>
             </el-card>
-
+            <!-- 定时调度 -->
+            <el-card shadow="never" style="margin-top: 16px">
+                <template #header>
+                    <div class="card-header">
+                        <el-icon>
+                            <Timer/>
+                        </el-icon>
+                        <span>定时调度</span>
+                        <el-tag
+                                v-if="scheduleData?.enabled"
+                                type="success"
+                                size="small"
+                                effect="plain"
+                                style="margin-left: 8px"
+                        >
+                            已启用 · {{ scheduleData.schedule_type === 'cron' ? 'Cron' : '间隔' }}
+                        </el-tag>
+                        <el-tag
+                                v-else
+                                type="info"
+                                size="small"
+                                effect="plain"
+                                style="margin-left: 8px"
+                        >
+                            未启用
+                        </el-tag>
+                    </div>
+                </template>
+                <ScheduleEditor :task-id="task.task_id"/>
+            </el-card>
             <!-- 守护配置 -->
             <el-card shadow="never" style="margin-top: 16px">
                 <template #header>
                     <div class="card-header">
                         <el-icon>
-                            <Shield/>
+                            <Lock/>
                         </el-icon>
-                        <span>守护与健康检查</span>
-                    </div>
-                </template>
-                <el-descriptions :column="2" border>
-                    <el-descriptions-item label="守护开启">
+                        <span>守护配置</span>
                         <el-tag
-                                :type="task.daemon_config?.enabled ? 'success' : 'info'"
+                                v-if="daemonForm.auto_restart"
+                                type="success"
                                 size="small"
                                 effect="plain"
-                        >{{ task.daemon_config?.enabled ? '已开启' : '未开启' }}
+                                style="margin-left: 8px"
+                        >自动重启
                         </el-tag>
-                    </el-descriptions-item>
-                    <el-descriptions-item label="重启间隔">
-                        {{ task.daemon_config?.restart_interval || '—' }}秒
-                    </el-descriptions-item>
-                    <el-descriptions-item label="最大重启次数">
-                        {{ task.daemon_config?.max_restarts ?? '—' }}
-                    </el-descriptions-item>
-                    <el-descriptions-item label="熔断重置时间">
-                        {{ task.daemon_config?.reset_time || '—' }}秒
-                    </el-descriptions-item>
-                    <el-descriptions-item label="健康检查类型">
-                        {{
-                        task.health_check_config?.type === 'http'
-                            ? 'HTTP 探活'
-                            : task.health_check_config?.type === 'process'
-                                ? '进程存活'
-                                : '未配置'
-                        }}
-                    </el-descriptions-item>
-                    <el-descriptions-item
-                            v-if="task.health_check_config?.type === 'http'"
-                            label="探活 URL"
-                    >
-                        <span class="mono">{{ task.health_check_config?.url || '—' }}</span>
-                    </el-descriptions-item>
-                </el-descriptions>
+                    </div>
+                </template>
+                <DaemonConfigCard v-model="daemonForm"/>
+                <div style="margin-top: 12px; display: flex; justify-content: flex-end">
+                    <el-button type="primary" :loading="savingDaemon" @click="saveDaemonConfig">
+                        保存守护配置
+                    </el-button>
+                </div>
             </el-card>
+
+            <!-- 健康检查 -->
+            <el-card shadow="never" style="margin-top: 16px">
+                <template #header>
+                    <div class="card-header">
+                        <el-icon>
+                            <Monitor/>
+                        </el-icon>
+                        <span>健康检查</span>
+                        <el-tag
+                                v-if="healthForm.type"
+                                type="info"
+                                size="small"
+                                effect="plain"
+                                style="margin-left: 8px"
+                        >{{ healthForm.type === 'process' ? '进程检测' : 'HTTP 检测' }}
+                        </el-tag>
+                    </div>
+                </template>
+                <HealthCheckCard v-model="healthForm"/>
+                <div style="margin-top: 12px; display: flex; justify-content: flex-end">
+                    <el-button type="primary" :loading="savingHealth" @click="saveHealthConfig">
+                        保存健康检查配置
+                    </el-button>
+                </div>
+            </el-card>
+
 
             <!-- 环境变量 -->
             <el-card shadow="never" style="margin-top: 16px">
@@ -882,6 +918,10 @@ import {
 } from '../api/params'
 import {startRun, stopRun, getRuns} from '../api/runs'
 import ParamFormRenderer from '../components/ParamFormRenderer.vue'
+import ScheduleEditor from '../components/ScheduleEditor.vue'
+import {getSchedule} from '../api/scheduler'
+import DaemonConfigCard from '../components/DaemonConfigCard.vue'
+import HealthCheckCard from '../components/HealthCheckCard.vue'
 
 
 const route = useRoute()
@@ -919,17 +959,47 @@ const concatRuleLabels = {
     '--key value': 'K V', '--key=value': 'K=V', flag: '标志',
     value_only: '仅值', env_var: '环境变量',
 }
+const scheduleData = ref(null)
 
 async function loadTask() {
     loading.value = true
     try {
         task.value = await getTask(route.params.id)
-        // 同时加载参数配置
+        // 加载参数配置
         try {
             paramsData.value = await getParams(route.params.id)
         } catch {
             paramsData.value = null
         }
+        // 加载调度配置
+        try {
+            scheduleData.value = await getSchedule(route.params.id)
+        } catch {
+            scheduleData.value = null
+        }
+        // 初始化守护/健康检查表单
+        const dc = typeof task.value.daemon_config === 'string'
+            ? JSON.parse(task.value.daemon_config || '{}')
+            : (task.value.daemon_config || {})
+        daemonForm.value = {
+            auto_restart: dc.auto_restart || false,
+            max_restarts: dc.max_restarts || 5,
+            reset_time: dc.reset_time || 600,
+            stop_timeout: dc.stop_timeout || 5,
+            manual_conflict: dc.manual_conflict || 'restart',
+            auto_conflict: dc.auto_conflict || 'skip',
+        }
+        const hc = typeof task.value.health_check_config === 'string'
+            ? JSON.parse(task.value.health_check_config || '{}')
+            : (task.value.health_check_config || {})
+        healthForm.value = {
+            type: hc.type || 'process',
+            url: hc.url || '',
+            interval: hc.interval || 30,
+            timeout: hc.timeout || 5,
+            fail_count: hc.fail_count || 3,
+        }
+
     } catch {
         ElMessage.error('任务不存在')
         router.push('/tasks')
@@ -1318,6 +1388,40 @@ async function handleUpload() {
     }
 }
 
+const daemonForm = ref({})
+const healthForm = ref({})
+const savingDaemon = ref(false)
+const savingHealth = ref(false)
+
+async function saveDaemonConfig() {
+    savingDaemon.value = true
+    try {
+        const payload = {...daemonForm.value}
+        // 确保重置窗口同步
+        if (payload.reset_time === undefined || payload.reset_time === 0) {
+            payload.reset_time = 600
+        }
+        await updateTask(task.value.task_id, {daemon_config: payload})
+        ElMessage.success('守护配置已保存')
+        loadTask()
+    } catch {
+    } finally {
+        savingDaemon.value = false
+    }
+}
+
+async function saveHealthConfig() {
+    savingHealth.value = true
+    try {
+        await updateTask(task.value.task_id, {health_check_config: healthForm.value})
+        ElMessage.success('健康检查配置已保存')
+        loadTask()
+    } catch {
+    } finally {
+        savingHealth.value = false
+    }
+}
+
 // ========== 初始化 ==========
 onMounted(() => {
     loadTask()
@@ -1325,9 +1429,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.task-detail {
-    max-width: 1200px;
-}
+.task-detail {}
 
 .page-header {
     display: flex;

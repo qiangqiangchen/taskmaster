@@ -53,7 +53,7 @@ def start_run(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"启动失败: {e}")
 
-    log_audit(db, "start_run", target_type="run", target_id=run_id,
+    log_audit(db, "start_run", target_type="run", username=_user["username"], target_id=run_id,
               detail={"task_id": task_id})
     return {"run_id": run_id, "message": "运行已启动"}
 
@@ -72,7 +72,7 @@ def stop_run(
     if not ok:
         raise HTTPException(status_code=500, detail="停止失败")
 
-    log_audit(db, "stop_run", target_type="run", target_id=run_id)
+    log_audit(db, "stop_run", target_type="run", username=_user["username"], target_id=run_id)
     return {"message": "停止指令已发送"}
 
 
@@ -90,7 +90,7 @@ def force_kill_run(
     if not ok:
         raise HTTPException(status_code=500, detail="终止失败")
 
-    log_audit(db, "force_kill_run", target_type="run", target_id=run_id)
+    log_audit(db, "force_kill_run", target_type="run", username=_user["username"], target_id=run_id)
     return {"message": "已强制终止"}
 
 
@@ -122,7 +122,7 @@ def restart_run(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"重启失败: {e}")
 
-    log_audit(db, "restart_run", target_type="run", target_id=new_run_id,
+    log_audit(db, "restart_run", target_type="run", username=_user["username"], target_id=new_run_id,
               detail={"old_run_id": run_id})
     return {"run_id": new_run_id, "message": "已重启"}
 

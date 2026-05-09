@@ -11,7 +11,6 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse, FileResponse
-from starlette.responses import Response
 
 from app.database import get_db
 from app.utils.deps import get_current_user, get_current_user_query
@@ -66,12 +65,12 @@ def _read_log_lines(
 def get_logs(
     run_id: str,
     offset: int = Query(0, ge=0),
-    limit: int = Query(500, ge=1, le=2000),
+    limit: int = Query(2000, ge=1, le=10000),
     search: str = Query(""),
     db=Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    """读取历史日志（分页 + 搜索）— axios 请求，Header 鉴权"""
+    """读取历史日志（分页 + 搜索）"""
     log_path = _get_log_path(run_id, db)
     if not log_path:
         raise HTTPException(status_code=404, detail="运行记录不存在")
@@ -86,7 +85,7 @@ async def stream_logs(
     db=Depends(get_db),
     _user=Depends(get_current_user_query),
 ):
-    """SSE 实时日志推送 — EventSource 请求，Query Token 鉴权"""
+    """SSE 实时日志推送"""
     log_path = _get_log_path(run_id, db)
     if not log_path:
         raise HTTPException(status_code=404, detail="运行记录不存在")
@@ -108,24 +107,54 @@ async def stream_logs(
             except Exception:
                 pass
 
-        # 如果进程仍在运行，持续推送新日志
         sent_count = 0
         if os.path.exists(log_path):
             try:
                 with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                    lines = f.readlines()
-                    sent_count = len(lines)
+                    sent_count = len(f.readlines())
             except Exception:
                 pass
 
         max_idle = 300
         idle_time = 0
         check_interval = 0.5
+        last_progress_sent = None
 
         while True:
             info = rm.get_run_info(run_id)
             is_running = info is not None
 
+            # 推送进度：优先内存，其次数据库
+            prog = None
+            if is_running and info.progress and info.progress.get("percent", 0) > 0:
+                prog = info.progress
+            else:
+                # 从数据库读取
+                try:
+                    row = db.execute(
+                        "SELECT percent, current, total, eta_sec, message FROM run_progress WHERE run_id = ?",
+                        (run_id,),
+                    ).fetchone()
+                    if row and row["percent"] > 0:
+                        prog = {
+                            "percent": row["percent"],
+                            "current": row["current"],
+                            "total": row["total"],
+                            "eta_sec": row["eta_sec"],
+                            "message": row["message"] or "",
+                        }
+                except Exception:
+                    pass
+
+            if prog:
+                prog_key = json.dumps(prog, sort_keys=True)
+                if prog_key != last_progress_sent:
+                    last_progress_sent = prog_key
+                    data = json.dumps({"type": "progress", **prog}, ensure_ascii=False)
+                    yield f"data: {data}\n\n"
+                    await asyncio.sleep(0)
+
+            # 读取新日志行
             new_lines = []
             if os.path.exists(log_path):
                 try:
@@ -148,6 +177,7 @@ async def stream_logs(
             else:
                 idle_time += check_interval
                 if not is_running:
+                    # 发送剩余日志
                     if os.path.exists(log_path):
                         try:
                             with open(log_path, "r", encoding="utf-8", errors="replace") as f:
@@ -187,7 +217,7 @@ def download_log(
     db=Depends(get_db),
     _user=Depends(get_current_user_query),
 ):
-    """下载日志文件 — window.open 请求，Query Token 鉴权"""
+    """下载日志文件"""
     log_path = _get_log_path(run_id, db)
     if not log_path:
         raise HTTPException(status_code=404, detail="运行记录不存在")

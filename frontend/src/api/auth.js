@@ -2,7 +2,11 @@ import http from './index'
 
 /** 登录 */
 export function login(data) {
-  return http.post('/auth/login', data)
+  return http.post('/auth/login', data).then(res => {
+    localStorage.setItem('token', res.token)
+    localStorage.setItem('username', data.username)
+    return res
+  })
 }
 
 /** 登出 */

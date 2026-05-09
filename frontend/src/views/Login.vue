@@ -1,85 +1,68 @@
 <template>
-  <div class="login-container">
+  <div class="login-page">
     <div class="login-card">
       <div class="login-header">
-        <div class="login-icon">
-          <el-icon :size="48" color="#60a5fa"><Monitor /></el-icon>
-        </div>
+        <el-icon :size="36" color="#3b82f6"><Monitor /></el-icon>
         <h1>TaskMaster</h1>
         <p>本地脚本统一管理平台</p>
       </div>
-
-      <el-form
-        :model="form"
-        :rules="rules"
-        ref="formRef"
-        @submit.prevent="handleLogin"
-      >
-        <el-form-item prop="username">
+      <el-form @submit.prevent="handleLogin" class="login-form">
+        <el-form-item>
           <el-input
-            v-model="form.username"
+            v-model="username"
             placeholder="用户名"
+            size="large"
             prefix-icon="User"
-            size="large"
-          />
-        </el-form-item>
-        <el-form-item prop="password">
-          <el-input
-            v-model="form.password"
-            type="password"
-            placeholder="密码"
-            prefix-icon="Lock"
-            size="large"
-            show-password
             @keyup.enter="handleLogin"
           />
         </el-form-item>
         <el-form-item>
-          <el-button
-            type="primary"
+          <el-input
+            v-model="password"
+            type="password"
+            placeholder="密码"
             size="large"
-            :loading="loading"
-            style="width: 100%"
-            @click="handleLogin"
-          >
-            登 录
-          </el-button>
+            prefix-icon="Lock"
+            show-password
+            @keyup.enter="handleLogin"
+          />
         </el-form-item>
+        <el-button
+          type="primary"
+          size="large"
+          :loading="loading"
+          @click="handleLogin"
+          style="width: 100%"
+        >
+          登 录
+        </el-button>
       </el-form>
-
-      <div class="login-footer">
-        <span>默认账号: admin / admin</span>
-      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from '../stores/auth'
 import { ElMessage } from 'element-plus'
+import { login } from '../api/auth'
 
 const router = useRouter()
-const auth = useAuthStore()
-const formRef = ref()
+const username = ref('')
+const password = ref('')
 const loading = ref(false)
 
-const form = reactive({ username: 'admin', password: 'admin' })
-const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
-}
-
 async function handleLogin() {
-  await formRef.value.validate()
+  if (!username.value || !password.value) {
+    ElMessage.warning('请输入用户名和密码')
+    return
+  }
   loading.value = true
   try {
-    await auth.login(form.username, form.password)
-    ElMessage.success('登录成功')
+    await login({ username: username.value, password: password.value })
     router.push('/dashboard')
   } catch {
-    // 错误已由拦截器处理
+    // error handled by interceptor
   } finally {
     loading.value = false
   }
@@ -87,49 +70,42 @@ async function handleLogin() {
 </script>
 
 <style scoped>
-.login-container {
+.login-page {
+  min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f3460 100%);
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
 }
 
 .login-card {
   width: 400px;
-  padding: 48px 40px 32px;
-  background: #fff;
+  background: #ffffff;
   border-radius: 16px;
-  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.4);
+  padding: 40px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
 }
 
 .login-header {
   text-align: center;
-  margin-bottom: 36px;
-}
-
-.login-icon {
-  margin-bottom: 16px;
+  margin-bottom: 32px;
 }
 
 .login-header h1 {
-  font-size: 28px;
+  margin: 12px 0 4px;
+  font-size: 24px;
+  font-weight: 700;
   color: #0f172a;
-  margin: 0 0 8px;
-  font-weight: 800;
-  letter-spacing: 3px;
+  letter-spacing: -0.5px;
 }
 
 .login-header p {
-  color: #94a3b8;
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
+  color: #94a3b8;
 }
 
-.login-footer {
-  text-align: center;
-  margin-top: 20px;
-  color: #c0c4cc;
-  font-size: 12px;
+.login-form .el-form-item {
+  margin-bottom: 20px;
 }
 </style>

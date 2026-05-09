@@ -3,12 +3,14 @@
         <!-- 页头 -->
         <div class="page-header">
             <h2>任务管理</h2>
-            <el-button type="primary" @click="openCreateDialog">
-                <el-icon>
-                    <Plus/>
-                </el-icon>
-                新建任务
-            </el-button>
+            <div class="header-actions">
+                <el-button type="primary" @click="openCreateDialog">
+                    <el-icon>
+                        <Plus/>
+                    </el-icon>
+                    新建任务
+                </el-button>
+            </div>
         </div>
 
         <!-- 筛选栏 -->
@@ -159,14 +161,18 @@
                                 </el-button>
                             </el-tooltip>
                             <el-tooltip :content="row.enabled ? '停用' : '启用'" placement="top">
-                                <el-button size="small" @click.stop="handleToggle(row)">
+                                <el-button
+                                        size="small"
+                                        :type="row.enabled ? 'warning' : 'success'"
+                                        @click.stop="handleToggle(row)"
+                                >
                                     <el-icon>
-                                        <component :is="row.enabled ? 'Switch' : 'Open'"/>
+                                        <component :is="row.enabled ? 'SwitchButton' : 'Open'"/>
                                     </el-icon>
                                 </el-button>
                             </el-tooltip>
                             <el-tooltip content="复制" placement="top">
-                                <el-button size="small" @click.stop="handleCopy(row)">
+                                <el-button size="small" @click.stop="handleDuplicate(row)">
                                     <el-icon>
                                         <CopyDocument/>
                                     </el-icon>
@@ -179,6 +185,8 @@
                                     </el-icon>
                                 </el-button>
                             </el-tooltip>
+
+
                         </el-button-group>
                     </template>
                 </el-table-column>
@@ -452,12 +460,13 @@ import {useRouter} from 'vue-router'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {
     getTasks, createTask, updateTask, deleteTask,
-    toggleTask, copyTask, uploadScript,
+    toggleTask, uploadScript, duplicateTask
 } from '../api/tasks'
 import {startRun, stopRun} from '../api/runs'
 import {getParams} from '../api/params'
 
 const router = useRouter()
+
 
 // ========== 列表数据 ==========
 const loading = ref(false)
@@ -689,27 +698,21 @@ async function handleSubmit() {
 async function handleToggle(task) {
     try {
         const res = await toggleTask(task.task_id)
-        ElMessage.success(res.message)
+        ElMessage.success(res.enabled ? '已启用' : '已停用')
         loadTasks()
     } catch {
-        // 已处理
     }
 }
 
-async function handleCopy(task) {
+async function handleDuplicate(task) {
     try {
-        await ElMessageBox.confirm(
-            `确定要将「${task.name}」复制为新任务吗？`,
-            '复制任务',
-            {type: 'info', confirmButtonText: '复制', cancelButtonText: '取消'}
-        )
-        const res = await copyTask(task.task_id)
-        ElMessage.success(res.message)
-        loadTasks()
+        const res = await duplicateTask(task.task_id)
+        ElMessage.success('任务已复制')
+        router.push(`/tasks/${res.task_id}`)
     } catch {
-        // 用户取消或请求错误
     }
 }
+
 
 async function handleDelete(task) {
     try {
@@ -730,6 +733,18 @@ async function handleDelete(task) {
         // 用户取消或请求错误
     }
 }
+
+// 任务图标
+function taskTypeLabel(type) {
+    const map = {shell: 'Shell', python: 'Python', batch: 'Batch', powershell: 'PS', node: 'Node', command: 'Cmd'}
+    return map[type] || type
+}
+
+function taskTagType(type) {
+    const map = {shell: '', python: 'success', batch: 'info', powershell: 'warning', node: 'danger', command: ''}
+    return map[type] || ''
+}
+
 
 // ========== 运行/停止 ==========
 
@@ -773,23 +788,25 @@ async function confirmRun() {
 }
 
 async function handleStop(task) {
-  try {
-    // 从运行历史找该任务运行中的记录
-    const res = await getRuns({ task_id: task.task_id, status: 'running', page_size: 10 })
-    const runningItems = res.items?.filter(r => r.status === 'running') || []
-    if (runningItems.length === 0) {
-      ElMessage.info('该任务没有运行中的实例')
-      return
+    try {
+        // 从运行历史找该任务运行中的记录
+        const res = await getRuns({task_id: task.task_id, status: 'running', page_size: 10})
+        const runningItems = res.items?.filter(r => r.status === 'running') || []
+        if (runningItems.length === 0) {
+            ElMessage.info('该任务没有运行中的实例')
+            return
+        }
+        // 停止所有运行中的实例
+        for (const item of runningItems) {
+            await stopRun(item.run_id)
+        }
+        ElMessage.success('停止指令已发送')
+        // 延迟刷新，等待进程真正退出
+        setTimeout(() => loadTasks(), 2000)
+    } catch {
     }
-    // 停止所有运行中的实例
-    for (const item of runningItems) {
-      await stopRun(item.run_id)
-    }
-    ElMessage.success('停止指令已发送')
-    // 延迟刷新，等待进程真正退出
-    setTimeout(() => loadTasks(), 2000)
-  } catch {}
 }
+
 
 // ========== 初始化 ==========
 onMounted(() => {
@@ -799,7 +816,7 @@ onMounted(() => {
 
 <style scoped>
 .tasks-page {
-    max-width: 1400px;
+    /*max-width: 1400px;*/
 }
 
 .page-header {
@@ -831,6 +848,11 @@ onMounted(() => {
     display: flex;
     align-items: center;
     gap: 10px;
+    cursor: pointer;
+}
+
+.task-name-cell:hover {
+    color: #3b82f6;
 }
 
 .task-name {

@@ -4,11 +4,11 @@ import router from '../router'
 
 const http = axios.create({
   baseURL: '/api',
-  timeout: 15000,
+  timeout: 30000,
 })
 
-// 请求拦截：注入 Token
-http.interceptors.request.use((config) => {
+// 请求拦截
+http.interceptors.request.use(config => {
   const token = localStorage.getItem('token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
@@ -16,25 +16,26 @@ http.interceptors.request.use((config) => {
   return config
 })
 
-// 响应拦截：统一错误处理
+// 响应拦截
 http.interceptors.response.use(
-  (response) => response.data,
-  (error) => {
-    if (error.response) {
-      const { status, data } = error.response
-      if (status === 401) {
-        localStorage.removeItem('token')
-        localStorage.removeItem('username')
-        if (router.currentRoute.value.path !== '/login') {
-          router.push('/login')
-          ElMessage.error('登录已过期，请重新登录')
-        }
-      } else {
-        ElMessage.error(data.detail || '请求失败')
-      }
-    } else {
-      ElMessage.error('网络错误，请检查后端服务是否启动')
+  response => response.data,
+  error => {
+    const status = error.response?.status
+    const msg = error.response?.data?.detail || '请求失败'
+
+    const isLoginRequest = error.config?.url?.includes('/auth/login')
+
+    if (status === 401 && !isLoginRequest) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('username')
+      router.push('/login')
+      ElMessage.error('登录已过期，请重新登录')
+    } else if (status === 401 && isLoginRequest) {
+      ElMessage.error(msg)
+    } else if (status && msg) {
+      ElMessage.error(msg)
     }
+
     return Promise.reject(error)
   }
 )

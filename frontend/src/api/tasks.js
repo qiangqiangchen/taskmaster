@@ -29,6 +29,10 @@ export function deleteTask(taskId) {
 export function toggleTask(taskId) {
   return http.post(`/tasks/${taskId}/toggle`)
 }
+/** 复制任务 */
+export function duplicateTask(taskId) {
+  return http.post(`/tasks/${taskId}/duplicate`)
+}
 
 /** 复制为新任务 */
 export function copyTask(taskId) {

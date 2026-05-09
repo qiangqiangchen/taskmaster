@@ -248,7 +248,7 @@ def save_params(
             (str(uuid.uuid4()), task_id, req.mode, json.dumps(req.schema, ensure_ascii=False), now),
         )
 
-    log_audit(db, "update_params", target_type="task", target_id=task_id)
+    log_audit(db, "update_params", target_type="task", username=_user["username"], target_id=task_id)
     return {"message": "参数配置已保存"}
 
 

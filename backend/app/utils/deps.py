@@ -1,67 +1,45 @@
 """
-FastAPI 依赖项
-- get_current_user: 从 JWT 提取当前用户
+依赖项：用户认证
 """
-import sqlite3
-
-from fastapi import Depends, HTTPException, status, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
+from fastapi import Depends, HTTPException, Request, Query
 from app.database import get_db
-from app.utils.security import verify_token
-
-security = HTTPBearer()
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: sqlite3.Connection = Depends(get_db),
+def get_current_user(
+    request: Request,
+    db=Depends(get_db),
 ):
-    """从 Authorization: Bearer <token> 中解析当前用户"""
-    payload = verify_token(credentials.credentials)
-    if payload is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无效或已过期的令牌",
-        )
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="令牌内容无效",
-        )
+    """通过 Header Token 获取当前用户"""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+
+    token = auth[7:]
     user = db.execute(
-        "SELECT user_id, username FROM users WHERE user_id = ?", (user_id,)
+        "SELECT user_id, username, role FROM users WHERE token = ?",
+        (token,),
     ).fetchone()
+
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户不存在",
-        )
-    return dict(user)
+        raise HTTPException(status_code=401, detail="登录已过期，请重新登录")
+
+    return {"user_id": user["user_id"], "username": user["username"], "role": user["role"]}
 
 
 def get_current_user_query(
-    token: str = Query(..., alias="token"),
+    token: str = Query(""),
     db=Depends(get_db),
 ):
-    """Query 参数版本的鉴权（用于 SSE / 文件下载等无法设 Header 的场景）"""
-    payload = verify_token(token)
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token 无效或已过期",
-        )
+    """通过 Query Token 获取当前用户（用于 SSE / 下载等场景）"""
+    if not token:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
 
     user = db.execute(
-        "SELECT user_id, username FROM users WHERE user_id = ?",
-        (payload["sub"],),
+        "SELECT user_id, username, role FROM users WHERE token = ?",
+        (token,),
     ).fetchone()
 
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户不存在",
-        )
+        raise HTTPException(status_code=401, detail="登录已过期，请重新登录")
 
-    return dict(user)
+    return {"user_id": user["user_id"], "username": user["username"], "role": user["role"]}

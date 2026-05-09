@@ -5,11 +5,10 @@ const routes = [
     path: '/login',
     name: 'Login',
     component: () => import('../views/Login.vue'),
-    meta: { public: true },
   },
   {
     path: '/',
-    component: () => import('../views/Layout.vue'),
+    component: () => import('../components/Layout.vue'),
     redirect: '/dashboard',
     children: [
       {
@@ -38,9 +37,9 @@ const routes = [
         component: () => import('../views/RunDetail.vue'),
       },
       {
-        path: 'files',
-        name: 'Files',
-        component: () => import('../views/Files.vue'),
+        path: 'audit',
+        name: 'Audit',
+        component: () => import('../views/Audit.vue'),
       },
       {
         path: 'settings',
@@ -54,16 +53,6 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
-})
-
-// 路由守卫：未登录跳转到登录页
-router.beforeEach((to, from, next) => {
-  const token = localStorage.getItem('token')
-  if (to.meta.public || token) {
-    next()
-  } else {
-    next('/login')
-  }
 })
 
 export default router

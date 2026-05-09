@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - taskmaster-data:/app/data
+    environment:
+      - TASKMASTER_HOST=0.0.0.0
+      - TASKMASTER_PORT=8000
+      - TASKMASTER_SECRET=change-this-to-a-random-string
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  taskmaster-data:
