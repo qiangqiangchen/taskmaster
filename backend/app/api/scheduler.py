@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/tasks", tags=["定时调度"])
 class SaveScheduleRequest(BaseModel):
     enabled: bool = False
     schedule_type: str = Field(..., pattern=r"^(cron|interval)$")
-    cron_expr: str = ""
+    cron_expression: str = ""
     interval_seconds: int = Field(0, ge=0)
 
 
@@ -47,7 +47,7 @@ def get_schedule(
             "task_id": task_id,
             "enabled": False,
             "schedule_type": "cron",
-            "cron_expr": "",
+            "cron_expression": "",
             "interval_seconds": 0,
             "next_run_at": None,
             "last_run_at": None,
@@ -57,9 +57,9 @@ def get_schedule(
     result["enabled"] = bool(result["enabled"])
 
     # 计算下次执行时间的可读格式
-    if result["schedule_type"] == "cron" and result["cron_expr"]:
+    if result["schedule_type"] == "cron" and result["cron_expression"]:
         try:
-            nr = next_run(result["cron_expr"])
+            nr = next_run(result["cron_expression"])
             result["next_run_readable"] = nr.strftime("%Y-%m-%d %H:%M") if nr else None
         except Exception:
             result["next_run_readable"] = None
@@ -83,9 +83,9 @@ def save_schedule(
 
     # 校验 cron 表达式
     if req.schedule_type == "cron" and req.enabled:
-        if not req.cron_expr.strip():
+        if not req.cron_expression.strip():
             raise HTTPException(status_code=400, detail="cron 表达式不能为空")
-        ok, err = validate_cron(req.cron_expr)
+        ok, err = validate_cron(req.cron_expression)
         if not ok:
             raise HTTPException(status_code=400, detail=f"cron 表达式无效: {err}")
 
@@ -101,12 +101,12 @@ def save_schedule(
         sch_row = db.execute("SELECT * FROM schedules WHERE task_id = ?", (task_id,)).fetchone()
         sch_dict = dict(sch_row) if sch_row else {}
         sch_dict["schedule_type"] = req.schedule_type
-        sch_dict["cron_expr"] = req.cron_expr
+        sch_dict["cron_expression"] = req.cron_expression
         sch_dict["interval_seconds"] = req.interval_seconds
 
         if req.schedule_type == "cron":
             try:
-                nr = next_run(req.cron_expr)
+                nr = next_run(req.cron_expression)
                 if nr:
                     next_run_at = nr.isoformat()
             except Exception:
@@ -122,12 +122,12 @@ def save_schedule(
 
     if existing:
         db.execute(
-            "UPDATE schedules SET enabled = ?, schedule_type = ?, cron_expr = ?, "
+            "UPDATE schedules SET enabled = ?, schedule_type = ?, cron_expression = ?, "
             "interval_seconds = ?, next_run_at = ?, updated_at = ? WHERE task_id = ?",
             (
                 1 if req.enabled else 0,
                 req.schedule_type,
-                req.cron_expr,
+                req.cron_expression,
                 req.interval_seconds,
                 next_run_at,
                 now,
@@ -137,14 +137,14 @@ def save_schedule(
     else:
         db.execute(
             "INSERT INTO schedules (schedule_id, task_id, enabled, schedule_type, "
-            "cron_expr, interval_seconds, next_run_at, created_at, updated_at) "
+            "cron_expression, interval_seconds, next_run_at, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 str(uuid.uuid4()),
                 task_id,
                 1 if req.enabled else 0,
                 req.schedule_type,
-                req.cron_expr,
+                req.cron_expression,
                 req.interval_seconds,
                 next_run_at,
                 now,

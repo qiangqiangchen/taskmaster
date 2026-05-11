@@ -85,7 +85,7 @@ def init_db():
                 task_id TEXT NOT NULL REFERENCES tasks(task_id) ON DELETE CASCADE,
                 type TEXT DEFAULT 'cron',
                 schedule_type TEXT DEFAULT 'cron',
-                cron_expr TEXT DEFAULT '',
+                cron_expression TEXT DEFAULT '',
                 interval_sec INTEGER DEFAULT 0,
                 interval_seconds INTEGER DEFAULT 0,
                 on_conflict TEXT DEFAULT 'skip',

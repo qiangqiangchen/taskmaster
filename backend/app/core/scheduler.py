@@ -134,11 +134,11 @@ class Scheduler:
 
     def _calc_next(self, schedule_type: str, sch) -> str | None:
         if schedule_type == "cron":
-            cron_expr = sch["cron_expression"]
-            if not cron_expr:
+            cron_expression = sch["cron_expression"]
+            if not cron_expression:
                 return None
             try:
-                nr = next_run(cron_expr)
+                nr = next_run(cron_expression)
                 if nr:
                     return nr.isoformat()
             except Exception as e:

@@ -102,12 +102,14 @@ class RunManager:
                 else:
                     strategy = daemon_cfg.get("auto_conflict", "skip")
                     if strategy == "skip":
+
                         run_id = str(uuid.uuid4())
+                        task_name = task["name"]
                         now = datetime.now(timezone.utc).isoformat()
                         conn.execute(
-                            "INSERT INTO runs (run_id, task_id, status, trigger_type, started_at, ended_at, final_command) "
-                            "VALUES (?, ?, 'skipped', ?, ?, ?, '')",
-                            (run_id, task_id, trigger_type, now, now),
+                            "INSERT INTO runs (run_id, task_id, task_name, status, trigger_type, started_at, ended_at, final_command) "
+                            "VALUES (?, ?, ?, 'skipped', ?, ?, ?, '')",
+                            (run_id, task_id, task_name, trigger_type, now, now),
                         )
                         conn.commit()
                         return run_id

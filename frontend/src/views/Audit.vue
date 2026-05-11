@@ -50,10 +50,10 @@
         <el-table-column label="目标" min-width="200">
           <template #default="{ row }">
             <span v-if="row.target_type === 'task'" class="mono clickable" @click="goTarget(row)">
-              {{ row.detail?.task_name || row.target_id?.slice(0, 8) || '—' }}
+              {{ row.detail?.task_name || row.target_id?.slice(0, 40) || '—' }}
             </span>
             <span v-else-if="row.target_type === 'run'" class="mono clickable" @click="goTarget(row)">
-              {{ row.target_id?.slice(0, 8) || '—' }}...
+              {{ row.target_id?.slice(0, 40) || '—' }}...
             </span>
             <span v-else class="mono">{{ row.target_id || '—' }}</span>
           </template>

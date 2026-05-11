@@ -136,7 +136,7 @@
                     </template>
                 </el-table-column>
 
-                <el-table-column label="操作" width="200" align="center" fixed="right">
+                <el-table-column label="操作" width="250" align="center" fixed="right">
                     <template #default="{ row }">
                         <el-button-group>
                             <el-tooltip content="运行" placement="top">
@@ -462,7 +462,7 @@ import {
     getTasks, createTask, updateTask, deleteTask,
     toggleTask, uploadScript, duplicateTask
 } from '../api/tasks'
-import {startRun, stopRun} from '../api/runs'
+import {startRun, stopRun, getRuns} from '../api/runs'
 import {getParams} from '../api/params'
 
 const router = useRouter()
@@ -790,19 +790,14 @@ async function confirmRun() {
 async function handleStop(task) {
     try {
         // 从运行历史找该任务运行中的记录
-        const res = await getRuns({task_id: task.task_id, status: 'running', page_size: 10})
-        const runningItems = res.items?.filter(r => r.status === 'running') || []
-        if (runningItems.length === 0) {
-            ElMessage.info('该任务没有运行中的实例')
-            return
+        const res = await getRuns({task_id: task.task_id, status: 'running', page_size: 1})
+        if (res.items?.length) {
+            await stopRun(res.items[0].run_id)
+            ElMessage.success('停止指令已发送')
+            setTimeout(() => loadTasks(), 2000)
+        } else {
+            ElMessage.info('没有运行中的实例')
         }
-        // 停止所有运行中的实例
-        for (const item of runningItems) {
-            await stopRun(item.run_id)
-        }
-        ElMessage.success('停止指令已发送')
-        // 延迟刷新，等待进程真正退出
-        setTimeout(() => loadTasks(), 2000)
     } catch {
     }
 }
