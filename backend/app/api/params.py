@@ -19,11 +19,21 @@ from app.services.audit_service import log_audit
 router = APIRouter(prefix="/api/tasks", tags=["参数化系统"])
 
 
+# ========== 系统占位符（不作为用户参数） ==========
+
+SYSTEM_PLACEHOLDERS = {
+    "python", "script", "python_path", "script_path",
+    "work_dir", "output_dir", "run_id", "task_id",
+    "workspace", "progress_url", "progress_token",
+}
+
+
 # ========== 辅助函数 ==========
 
 def parse_placeholders(template: str) -> list[str]:
-    """从命令模板中提取 {param_name} 占位符，保持出现顺序去重"""
-    return list(dict.fromkeys(re.findall(r"\{(\w+)\}", template)))
+    """从命令模板中提取 {param_name} 占位符，排除系统占位符，保持出现顺序去重"""
+    all_names = re.findall(r"\{(\w+)\}", template)
+    return list(dict.fromkeys(n for n in all_names if n not in SYSTEM_PLACEHOLDERS))
 
 
 def generate_simple_schema(template: str) -> dict:
@@ -34,7 +44,7 @@ def generate_simple_schema(template: str) -> dict:
         lower = name.lower()
         # 智能推断类型
         param_type = "string"
-        if any(kw in lower for kw in ("count", "num", "size", "port", "timeout", "limit", "max", "min", "threads")):
+        if any(kw in lower for kw in ("count", "num", "size", "port", "timeout", "limit", "max", "min", "threads", "duration", "interval", "fail_after")):
             param_type = "number"
         elif any(kw in lower for kw in ("force", "verbose", "debug", "dry", "quiet", "yes", "no", "enable", "disable", "recursive")):
             param_type = "boolean"
@@ -71,21 +81,105 @@ def generate_simple_schema(template: str) -> dict:
     return {"params": params}
 
 
+def replace_system_placeholders(template: str, task: dict = None) -> str:
+    """替换系统占位符为实际值"""
+    import os
+    from pathlib import Path
+
+    result = template
+
+    if not task:
+        for ph in SYSTEM_PLACEHOLDERS:
+            result = result.replace(f"{{{ph}}}", "")
+        return result
+
+    entry_config = task.get("entry_config") or {}
+    if isinstance(entry_config, str):
+        try:
+            entry_config = json.loads(entry_config)
+        except Exception:
+            entry_config = {}
+
+    python_path = entry_config.get("python_path") or "python"
+    result = result.replace("{python}", python_path)
+    result = result.replace("{python_path}", python_path)
+
+    task_type = task.get("type", "")
+    task_id = task.get("task_id", "")
+    workspace = Path(__file__).resolve().parent.parent / "workspace"
+
+    # 解析 {script}
+    script_path = ""
+    if task_type == "python_script":
+        script_path = entry_config.get("script_path") or ""
+        if not script_path:
+            candidate = workspace / "scripts" / f"{task_id}.py"
+            if candidate.exists():
+                script_path = str(candidate)
+
+    elif task_type == "project":
+        project_dir = entry_config.get("project_dir") or ""
+        script_filename = entry_config.get("script_filename") or "main.py"
+        if project_dir:
+            candidate = os.path.join(project_dir, script_filename)
+            if os.path.isfile(candidate):
+                script_path = candidate
+            else:
+                script_path = script_filename
+        else:
+            proj_dir = workspace / "scripts" / task_id
+            if proj_dir.is_dir():
+                candidate = proj_dir / script_filename
+                if candidate.exists():
+                    script_path = str(candidate)
+                else:
+                    script_path = script_filename
+
+    elif task_type == "executable":
+        script_path = entry_config.get("exe_path") or ""
+        if not script_path:
+            candidate = workspace / "scripts" / f"{task_id}.exe"
+            if candidate.exists():
+                script_path = str(candidate)
+
+    result = result.replace("{script}", script_path)
+    result = result.replace("{script_path}", script_path)
+
+    # 清理未替换的系统占位符
+    for ph in SYSTEM_PLACEHOLDERS:
+        result = result.replace(f"{{{ph}}}", "")
+
+    return result
+
+
 def render_command(
     template: str,
     schema: dict,
     values: dict,
     mode: str,
+    task: dict = None,
 ) -> tuple[str, dict]:
     """
     渲染最终命令
     返回 (final_command, env_vars_to_inject)
     """
+
+    def _quote_if_needed(value: str) -> str:
+        """如果值包含空格且未被引号包裹，自动加双引号"""
+        if not value:
+            return value
+        if ' ' in value and not (value.startswith('"') and value.endswith('"')):
+            return f'"{value}"'
+        return value
+
     env_vars: dict[str, str] = {}
+
+    # 先替换系统占位符
+    result = replace_system_placeholders(template, task)
+
     params = schema.get("params", [])
 
     if mode == "simple":
-        result = template
         for p in params:
             name = p["name"]
             value = values.get(name, p.get("default", ""))
@@ -94,14 +188,13 @@ def render_command(
             elif isinstance(value, bool):
                 result = result.replace(f"{{{name}}}", str(value).lower())
             else:
-                result = result.replace(f"{{{name}}}", str(value))
+                result = result.replace(f"{{{name}}}", _quote_if_needed(str(value)))
         # 清理残留占位符
         result = re.sub(r"\{(\w+)\}", "", result)
         result = re.sub(r"\s+", " ", result).strip()
         return result, env_vars
 
     # 高级模式
-    result = template
     appended_parts: list[str] = []
 
     for p in params:
@@ -123,7 +216,7 @@ def render_command(
             elif isinstance(value, bool):
                 result = result.replace(f"{{{name}}}", str(value).lower())
             else:
-                result = result.replace(f"{{{name}}}", str(value))
+                result = result.replace(f"{{{name}}}", _quote_if_needed(str(value)))
             continue
 
         # 否则按拼接规则追加
@@ -134,7 +227,7 @@ def render_command(
                 appended_parts.append(concat_key)
         elif concat_rule == "--key value":
             if str_val.strip():
-                appended_parts.append(f"{concat_key} {str_val}")
+                appended_parts.append(f"{concat_key} {_quote_if_needed(str_val)}")
         elif concat_rule == "--key=value":
             if str_val.strip():
                 appended_parts.append(f"{concat_key}={str_val}")
@@ -202,7 +295,7 @@ def get_params(
     result = dict(param)
     schema = json.loads(result["schema"])
 
-    # 关键修复：schema 为空但模板有占位符时，自动解析并回填
+    # schema 为空但模板有占位符时，自动解析并回填
     if not schema.get("params") and parse_placeholders(task["command_template"]):
         schema = generate_simple_schema(task["command_template"])
         now = datetime.now(timezone.utc).isoformat()
@@ -215,6 +308,7 @@ def get_params(
     result["schema"] = schema
     result["command_template"] = task["command_template"]
     return result
+
 
 @router.put("/{task_id}/params")
 def save_params(
@@ -279,7 +373,7 @@ def render_cmd(
 ):
     """预览最终命令（Dry Run）"""
     task = db.execute(
-        "SELECT command_template FROM tasks WHERE task_id = ?",
+        "SELECT command_template, type, script_path, entry_config FROM tasks WHERE task_id = ?",
         (task_id,),
     ).fetchone()
     if not task:
@@ -293,7 +387,10 @@ def render_cmd(
     mode = param["mode"] if param else "simple"
     schema = json.loads(param["schema"]) if param else {"params": []}
 
-    command, env_vars = render_command(task["command_template"], schema, req.values, mode)
+    task_dict = dict(task)
+    command, env_vars = render_command(
+        task["command_template"], schema, req.values, mode, task_dict,
+    )
 
     return {
         "command": command,

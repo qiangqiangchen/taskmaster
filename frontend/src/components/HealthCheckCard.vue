@@ -29,7 +29,7 @@
 
       <div class="hc-note">
         <el-icon><InfoFilled /></el-icon>
-        <span>健康检查检测到不健康时，将触发守护进程重启逻辑（需开启自动重启）</span>
+        <span>健康检查检测到不健康时，将停止该任务！</span>
       </div>
     </el-form>
   </div>

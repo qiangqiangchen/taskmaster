@@ -39,25 +39,26 @@ def init_db():
     """)
 
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
-            task_id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            type TEXT NOT NULL DEFAULT 'command',
-            command_template TEXT DEFAULT '',
-            entry_config TEXT DEFAULT '{}',
-            has_script INTEGER DEFAULT 0,
-            script_path TEXT,
-            work_dir TEXT DEFAULT '',
-            tags TEXT DEFAULT '[]',
-            enabled INTEGER DEFAULT 1,
-            daemon_config TEXT DEFAULT '{}',
-            health_check_config TEXT DEFAULT '{}',
-            schedule_config TEXT DEFAULT '{}',
-            env_vars TEXT DEFAULT '{}',
-            created_at TEXT,
-            updated_at TEXT
-        )
-    """)
+            CREATE TABLE IF NOT EXISTS tasks (
+                task_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL DEFAULT 'command',
+                command_template TEXT DEFAULT '',
+                entry_config TEXT DEFAULT '{}',
+                has_script INTEGER DEFAULT 0,
+                script_path TEXT,
+                work_dir TEXT DEFAULT '',
+                tags TEXT DEFAULT '[]',
+                enabled INTEGER DEFAULT 1,
+                health_status TEXT DEFAULT 'healthy',
+                daemon_config TEXT DEFAULT '{}',
+                health_check_config TEXT DEFAULT '{}',
+                schedule_config TEXT DEFAULT '{}',
+                env_vars TEXT DEFAULT '{}',
+                created_at TEXT,
+                updated_at TEXT
+            )
+        """)
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS task_params (

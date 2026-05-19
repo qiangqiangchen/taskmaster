@@ -15,7 +15,6 @@ import queue as queue_module
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 import sqlite3
 
 from app.config import WORKSPACE_DIR
@@ -26,6 +25,7 @@ from app.core.job_object import (
     close_job_object,
 )
 from app.core.event_bus import event_bus
+
 
 class RunInfo:
     """运行实例的内存状态"""
@@ -70,10 +70,10 @@ class RunManager:
     # ========== 启动运行 ==========
 
     def start_run(
-        self,
-        task_id: str,
-        trigger_type: str = "manual",
-        param_values: dict | None = None,
+            self,
+            task_id: str,
+            trigger_type: str = "manual",
+            param_values: dict | None = None,
     ) -> str:
         """启动一次运行，返回 run_id"""
         conn = self._get_conn()
@@ -128,10 +128,24 @@ class RunManager:
             values = param_values or {}
 
             command, env_vars = render_command(
-                task["command_template"], schema, values, mode
+                task["command_template"], schema, values, mode, dict(task)
             )
-            # 命令为空时，根据任务类型自动生成
 
+            # EXE 任务：如果命令不含 exe 路径，自动前缀
+            if task["type"] == "executable" and command.strip():
+                entry_cfg_check = json.loads(task["entry_config"] or "{}")
+                exe_path = entry_cfg_check.get("exe_path") or ""
+                if not exe_path:
+                    exe_candidate = WORKSPACE_DIR / "scripts" / f"{task_id}.exe"
+                    if exe_candidate.exists():
+                        exe_path = str(exe_candidate)
+                if exe_path and os.path.isfile(exe_path):
+                    # 检查命令是否已经包含 exe 路径
+                    exe_name = os.path.basename(exe_path)
+                    if exe_path not in command and exe_name not in command:
+                        command = f'"{exe_path}" {command}'
+
+            # 命令为空时，根据任务类型自动生成
             if not command.strip():
                 entry_cfg = json.loads(task["entry_config"] or "{}")
 
@@ -147,6 +161,14 @@ class RunManager:
                             if py_files:
                                 command = f'"{python_path}" "{py_files[0]}"'
 
+                elif task["type"] == "project":
+                    project_dir = entry_cfg.get("project_dir", "")
+                    script_filename = entry_cfg.get("script_filename", "main.py")
+                    if project_dir and os.path.isdir(project_dir):
+                        command = f'python "{script_filename}"'
+                    else:
+                        raise ValueError("多文件项目必须指定命令模板")
+
                 elif task["type"] == "executable":
                     exe_path = entry_cfg.get("exe_path", "")
                     if exe_path and os.path.isfile(exe_path):
@@ -157,9 +179,6 @@ class RunManager:
                             exe_files = list(script_dir.glob("*.exe"))
                             if exe_files:
                                 command = f'"{exe_files[0]}"'
-
-                elif task["type"] == "project":
-                    raise ValueError("多文件项目必须指定命令模板")
 
             if not command.strip():
                 raise ValueError("渲染后的命令为空，请检查命令模板和参数")
@@ -203,6 +222,12 @@ class RunManager:
 
             # work_dir = task["work_dir"] or str(WORKSPACE_DIR)
             work_dir = task["work_dir"] or str(output_dir)
+            # 多文件项目：工作目录设为项目目录
+            if task["type"] == "project":
+                entry_cfg2 = json.loads(task["entry_config"] or "{}")
+                proj_dir = entry_cfg2.get("project_dir", "")
+                if proj_dir and os.path.isdir(proj_dir):
+                    work_dir = proj_dir
 
             log_max_mb = 100
             try:
@@ -461,6 +486,16 @@ class RunManager:
             else:
                 status = "failed"
 
+            # 运行成功 → 重置健康状态
+            if status == "success":
+                try:
+                    conn.execute(
+                        "UPDATE tasks SET health_status = 'healthy' WHERE task_id = ?",
+                        (info.task_id,),
+                    )
+                except Exception:
+                    pass
+
             if status == "failed":
                 failure_lines = []
                 try:
@@ -500,6 +535,7 @@ class RunManager:
             })
         finally:
             conn.close()
+
     # ========== 停止运行 ==========
 
     def stop_run(self, run_id: str, timeout: int | None = None) -> bool:

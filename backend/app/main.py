@@ -8,7 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.database import init_db
-from app.api import auth, audit, tasks, params, runs, logs, artifacts, ws, scheduler, settings, dashboard, maintenance, progress
+from app.api import auth, audit, tasks, params, runs, logs, artifacts, ws, scheduler, settings, dashboard, maintenance, \
+    progress, health
 from app.config import HOST, PORT
 from app.core.run_manager import RunManager
 from app.core.scheduler import Scheduler
@@ -76,7 +77,7 @@ app.include_router(settings.router)
 app.include_router(dashboard.router)
 app.include_router(maintenance.router)
 app.include_router(progress.router)
-
+app.include_router(health.router)
 
 
 @app.get("/api/health")
@@ -86,4 +87,5 @@ def health_check():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app.main:app", host=HOST, port=PORT, reload=True)

@@ -66,6 +66,7 @@
                     @row-click="goDetail"
                     row-class-name="clickable-row"
             >
+
                 <el-table-column label="任务名称" min-width="200">
                     <template #default="{ row }">
                         <div class="task-name-cell">
@@ -80,6 +81,9 @@
                                     effect="plain"
                             >
                                 未上传脚本
+                            </el-tag>
+                            <el-tag v-if="row.health_status === 'unhealthy'" type="danger" size="small" effect="dark">
+                                不健康
                             </el-tag>
                         </div>
                     </template>

@@ -108,12 +108,12 @@ def _enrich_task(task: dict, db):
 
 @router.get("")
 def list_tasks(
-    search: str = Query("", description="名称模糊搜索"),
-    type: str | None = Query(None, description="按类型筛选"),
-    status: str | None = Query(None, description="按状态: running/idle/disabled/failed"),
-    tag: str | None = Query(None, description="按标签筛选"),
-    db=Depends(get_db),
-    _user=Depends(get_current_user),
+        search: str = Query("", description="名称模糊搜索"),
+        type: str | None = Query(None, description="按类型筛选"),
+        status: str | None = Query(None, description="按状态: running/idle/disabled/failed"),
+        tag: str | None = Query(None, description="按标签筛选"),
+        db=Depends(get_db),
+        _user=Depends(get_current_user),
 ):
     """获取任务列表"""
     conditions = []
@@ -156,9 +156,9 @@ def list_tasks(
 
 @router.post("")
 def create_task(
-    req: TaskCreateRequest,
-    db=Depends(get_db),
-    _user=Depends(get_current_user),
+        req: TaskCreateRequest,
+        db=Depends(get_db),
+        _user=Depends(get_current_user),
 ):
     """新建任务"""
     task_id = str(uuid.uuid4())
@@ -197,11 +197,12 @@ def create_task(
 
     return {"task_id": task_id, "message": "任务创建成功"}
 
+
 @router.get("/{task_id}")
 def get_task(
-    task_id: str,
-    db=Depends(get_db),
-    _user=Depends(get_current_user),
+        task_id: str,
+        db=Depends(get_db),
+        _user=Depends(get_current_user),
 ):
     """获取任务详情"""
     row = db.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
@@ -271,9 +272,9 @@ def update_task(
 
 @router.delete("/{task_id}")
 def delete_task(
-    task_id: str,
-    db=Depends(get_db),
-    _user=Depends(get_current_user),
+        task_id: str,
+        db=Depends(get_db),
+        _user=Depends(get_current_user),
 ):
     """删除任务"""
     existing = db.execute(
@@ -309,38 +310,13 @@ def delete_task(
     return {"message": "任务删除成功"}
 
 
-@router.post("/{task_id}/toggle")
-def toggle_task(
-    task_id: str,
-    db=Depends(get_db),
-    _user=Depends(get_current_user),
-):
-    """启用/停用切换"""
-    existing = db.execute(
-        "SELECT task_id, enabled, name FROM tasks WHERE task_id = ?", (task_id,)
-    ).fetchone()
-    if not existing:
-        raise HTTPException(status_code=404, detail="任务不存在")
-
-    new_enabled = 0 if existing["enabled"] else 1
-    now = datetime.now(timezone.utc).isoformat()
-    db.execute(
-        "UPDATE tasks SET enabled = ?, updated_at = ? WHERE task_id = ?",
-        (new_enabled, now, task_id),
-    )
-
-    action = "enable_task" if new_enabled else "disable_task"
-    log_audit(db, action, target_type="task", target_id=task_id,
-              detail={"name": existing["name"]}, username=_user["username"])
-
-    return {"enabled": bool(new_enabled), "message": "已启用" if new_enabled else "已停用"}
 
 
 @router.post("/{task_id}/copy")
 def copy_task(
-    task_id: str,
-    db=Depends(get_db),
-    _user=Depends(get_current_user),
+        task_id: str,
+        db=Depends(get_db),
+        _user=Depends(get_current_user),
 ):
     """复制为新任务"""
     existing = db.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
@@ -405,10 +381,10 @@ def copy_task(
 
 @router.post("/{task_id}/upload")
 async def upload_script(
-    task_id: str,
-    file: UploadFile = File(...),
-    db=Depends(get_db),
-    _user=Depends(get_current_user),
+        task_id: str,
+        file: UploadFile = File(...),
+        db=Depends(get_db),
+        _user=Depends(get_current_user),
 ):
     """上传脚本文件（Python/Zip/Exe）"""
     existing = db.execute(
@@ -426,41 +402,87 @@ async def upload_script(
             raise HTTPException(status_code=400, detail="Python 脚本必须上传 .py 文件")
         target = SCRIPTS_DIR / f"{task_id}.py"
         target.write_bytes(await file.read())
-        config = {"script_path": str(target)}
+        config = {"script_path": str(target), "script_filename": filename}
         now = datetime.now(timezone.utc).isoformat()
         db.execute(
             "UPDATE tasks SET entry_config = ?, updated_at = ? WHERE task_id = ?",
             (json.dumps(config, ensure_ascii=False), now, task_id),
         )
 
+
     elif task_type == "project":
+
         if not filename.lower().endswith(".zip"):
             raise HTTPException(status_code=400, detail="多文件项目必须上传 .zip 文件")
+
         target_dir = SCRIPTS_DIR / task_id
+
         if target_dir.exists():
             shutil.rmtree(target_dir)
+
         target_dir.mkdir(parents=True)
 
         content = await file.read()
+
         with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+
             tmp.write(content)
+
             tmp_path = tmp.name
+
         try:
+
             with zipfile.ZipFile(tmp_path, "r") as zf:
+
                 for member in zf.namelist():
+
                     if member.startswith("/") or ".." in member:
                         raise HTTPException(
+
                             status_code=400, detail=f"压缩包包含不安全路径: {member}"
+
                         )
+
                 zf.extractall(target_dir)
+
         finally:
+
             os.unlink(tmp_path)
 
-        config = {"project_dir": str(target_dir)}
+        # 如果 zip 内只有一层目录，展平到根
+
+        top_items = list(target_dir.iterdir())
+
+        if len(top_items) == 1 and top_items[0].is_dir():
+
+            inner = top_items[0]
+
+            for item in list(inner.iterdir()):
+                shutil.move(str(item), str(target_dir / item.name))
+
+            inner.rmdir()
+
+        # 检测入口脚本
+
+        script_filename = "main.py"
+
+        if not (target_dir / "main.py").exists():
+
+            py_files = list(target_dir.glob("*.py"))
+
+            if py_files:
+                script_filename = py_files[0].name
+
+        config = {"project_dir": str(target_dir), "script_filename": script_filename}
+
         now = datetime.now(timezone.utc).isoformat()
+
         db.execute(
+
             "UPDATE tasks SET entry_config = ?, updated_at = ? WHERE task_id = ?",
+
             (json.dumps(config, ensure_ascii=False), now, task_id),
+
         )
 
     elif task_type == "executable":
@@ -484,22 +506,33 @@ async def upload_script(
     return {"message": "文件上传成功", "filename": filename}
 
 
-
 @router.put("/{task_id}/toggle")
 def toggle_task(
-    task_id: str,
-    db=Depends(get_db),
-    _user=Depends(get_current_user),
+        task_id: str,
+        db=Depends(get_db),
+        _user=Depends(get_current_user),
 ):
     """切换任务启用/停用"""
+    import json as _json
     task = db.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
     new_enabled = 0 if task["enabled"] else 1
-    db.execute(
-        "UPDATE tasks SET enabled = ? WHERE task_id = ?", (new_enabled, task_id)
-    )
+
+    if new_enabled:
+        hc = _json.loads(task["health_check_config"] or "{}")
+        hc["last_health_reset_at"] = datetime.now(timezone.utc).isoformat()
+        db.execute(
+            "UPDATE tasks SET enabled = ?, health_status = 'healthy', health_check_config = ? WHERE task_id = ?",
+            (1, _json.dumps(hc), task_id),
+        )
+    else:
+        db.execute(
+            "UPDATE tasks SET enabled = ? WHERE task_id = ?",
+            (0, task_id),
+        )
+
     db.commit()
 
     log_audit(
@@ -511,11 +544,47 @@ def toggle_task(
     return {"enabled": bool(new_enabled)}
 
 
+@router.post("/{task_id}/toggle")
+def toggle_task_post(
+        task_id: str,
+        db=Depends(get_db),
+        _user=Depends(get_current_user),
+):
+    """启用/停用切换"""
+    import json as _json
+    existing = db.execute(
+        "SELECT task_id, enabled, name, health_check_config FROM tasks WHERE task_id = ?", (task_id,)
+    ).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    new_enabled = 0 if existing["enabled"] else 1
+
+    if new_enabled:
+        hc = _json.loads(existing["health_check_config"] or "{}")
+        hc["last_health_reset_at"] = datetime.now(timezone.utc).isoformat()
+        db.execute(
+            "UPDATE tasks SET enabled = ?, health_status = 'healthy', health_check_config = ? WHERE task_id = ?",
+            (1, _json.dumps(hc), task_id),
+        )
+    else:
+        db.execute(
+            "UPDATE tasks SET enabled = ? WHERE task_id = ?",
+            (0, task_id),
+        )
+
+    db.commit()
+
+    action = "enable_task" if new_enabled else "disable_task"
+    log_audit(db, action, target_type="task", target_id=task_id,
+              detail={"name": existing["name"]}, username=_user["username"])
+
+    return {"enabled": bool(new_enabled), "message": "已启用" if new_enabled else "已停用"}
 @router.post("/{task_id}/duplicate")
 def duplicate_task(
-    task_id: str,
-    db=Depends(get_db),
-    _user=Depends(get_current_user),
+        task_id: str,
+        db=Depends(get_db),
+        _user=Depends(get_current_user),
 ):
     """复制任务"""
     task = db.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()

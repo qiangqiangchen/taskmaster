@@ -500,44 +500,11 @@
 
                 <!-- 守护配置 -->
                 <el-divider content-position="left">守护配置</el-divider>
-                <el-form-item label="守护开启">
-                    <el-switch v-model="editForm.daemon_config.enabled"/>
-                </el-form-item>
-                <template v-if="editForm.daemon_config.enabled">
-                    <el-form-item label="重启间隔(秒)">
-                        <el-input-number v-model="editForm.daemon_config.restart_interval" :min="1" :max="3600"/>
-                    </el-form-item>
-                    <el-form-item label="最大重启次数">
-                        <el-input-number v-model="editForm.daemon_config.max_restarts" :min="1" :max="100"/>
-                    </el-form-item>
-                    <el-form-item label="熔断重置(秒)">
-                        <el-input-number v-model="editForm.daemon_config.reset_time" :min="10" :max="86400"/>
-                    </el-form-item>
-                </template>
+                <DaemonConfigCard v-model="editForm.daemon_config"/>
 
                 <!-- 健康检查 -->
                 <el-divider content-position="left">健康检查</el-divider>
-                <el-form-item label="检查类型">
-                    <el-radio-group v-model="editForm.health_check_config.type">
-                        <el-radio value="process">进程存活</el-radio>
-                        <el-radio value="http">HTTP 探活</el-radio>
-                    </el-radio-group>
-                </el-form-item>
-                <template v-if="editForm.health_check_config.type === 'http'">
-                    <el-form-item label="探活 URL">
-                        <el-input v-model="editForm.health_check_config.url"
-                                  placeholder="http://127.0.0.1:8080/health"/>
-                    </el-form-item>
-                    <el-form-item label="探活间隔(秒)">
-                        <el-input-number v-model="editForm.health_check_config.interval" :min="5" :max="300"/>
-                    </el-form-item>
-                    <el-form-item label="超时(秒)">
-                        <el-input-number v-model="editForm.health_check_config.timeout" :min="1" :max="30"/>
-                    </el-form-item>
-                    <el-form-item label="连续失败次数">
-                        <el-input-number v-model="editForm.health_check_config.fail_count" :min="1" :max="10"/>
-                    </el-form-item>
-                </template>
+                <HealthCheckCard v-model="editForm.health_check_config"/>
 
                 <!-- 环境变量 -->
                 <el-divider content-position="left">自定义环境变量</el-divider>
@@ -1099,7 +1066,10 @@ const tagInputRef = ref()
 
 const editForm = reactive({
     name: '', command_template: '', entry_config: {}, work_dir: '', tags: [],
-    daemon_config: {enabled: false, restart_interval: 5, max_restarts: 5, reset_time: 600},
+    daemon_config: {
+        auto_restart: false, max_restarts: 5, reset_time: 600,
+        stop_timeout: 5, manual_conflict: 'restart', auto_conflict: 'skip',
+    },
     health_check_config: {type: 'process', url: '', interval: 30, timeout: 5, fail_count: 3},
     env_vars_list: [],
 })
@@ -1152,21 +1122,30 @@ function openEditDialog() {
     editForm.entry_config = {...(t.entry_config || {})}
     editForm.work_dir = t.work_dir || ''
     editForm.tags = [...(t.tags || [])]
-    const dc = t.daemon_config || {}
+
+    const dc = typeof t.daemon_config === 'string'
+        ? JSON.parse(t.daemon_config || '{}')
+        : (t.daemon_config || {})
     editForm.daemon_config = {
-        enabled: dc.enabled || false,
-        restart_interval: dc.restart_interval || 5,
+        auto_restart: dc.auto_restart || false,
         max_restarts: dc.max_restarts || 5,
-        reset_time: dc.reset_time || 600
+        reset_time: dc.reset_time || 600,
+        stop_timeout: dc.stop_timeout || 5,
+        manual_conflict: dc.manual_conflict || 'restart',
+        auto_conflict: dc.auto_conflict || 'skip',
     }
-    const hc = t.health_check_config || {}
+
+    const hc = typeof t.health_check_config === 'string'
+        ? JSON.parse(t.health_check_config || '{}')
+        : (t.health_check_config || {})
     editForm.health_check_config = {
         type: hc.type || 'process',
         url: hc.url || '',
         interval: hc.interval || 30,
         timeout: hc.timeout || 5,
-        fail_count: hc.fail_count || 3
+        fail_count: hc.fail_count || 3,
     }
+
     editForm.env_vars_list = Object.entries(t.env_vars || {}).map(([k, v]) => ({key: k, value: v}))
     editDialogVisible.value = true
 }
